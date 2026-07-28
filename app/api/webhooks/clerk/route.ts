@@ -1,4 +1,3 @@
-/* eslint-disable camelcase */
 import { clerkClient } from "@clerk/nextjs/server";
 import { WebhookEvent } from "@clerk/nextjs/server";
 import { headers } from "next/headers";
@@ -38,13 +37,21 @@ export async function POST(req: NextRequest) {
 
   // Create a new Svix instance with your secret.
   const wh = new Webhook(WEBHOOK_SECRET);
+  let evt: WebhookEvent;
+  try {
+    evt = wh.verify(body, {
+      "svix-id": svixId,
+      "svix-timestamp": svixTimestamp,
+      "svix-signature": svixSignature,
+    }) as WebhookEvent;
+  } catch (err) {
+    console.error("Webhook verification failed:", err);
 
-  // Verify the payload with the headers
-  const evt = wh.verify(body, {
-    "svix-id": svixId,
-    "svix-timestamp": svixTimestamp,
-    "svix-signature": svixSignature,
-  }) as WebhookEvent;
+    return NextResponse.json(
+      { error: "Invalid webhook signature" },
+      { status: 400 },
+    );
+  }
 
   // Get the ID and type
   const { id } = evt.data;
@@ -58,26 +65,36 @@ export async function POST(req: NextRequest) {
     const user: CreateUserParams = {
       clerkId: id,
       email: email_addresses[0].email_address,
-      username: username!,
+      username:
+        username ??
+        email_addresses[0]?.email_address.split("@")[0] ??
+        `user_${id.slice(-6)}`,
       firstName: first_name,
       lastName: last_name,
       photo: image_url,
     };
 
-    const newUser = await createUser(user);
+    try {
+      const newUser = await createUser(user);
 
-    // Set public metadata
-    if (newUser) {
-      const client = await clerkClient();
+      console.log("Created user:", newUser);
 
-      await client.users.updateUserMetadata(id, {
-        publicMetadata: {
-          userId: newUser._id.toString(),
-        },
-      });
+      if (newUser) {
+        const client = await clerkClient();
+
+        await client.users.updateUserMetadata(id, {
+          publicMetadata: {
+            userId: newUser._id.toString(),
+          },
+        });
+      }
+
+      return NextResponse.json({ message: "OK", user: newUser });
+    } catch (error) {
+      console.error("Webhook error:", error);
+
+      return NextResponse.json({ error: String(error) }, { status: 500 });
     }
-
-    return NextResponse.json({ message: "OK", user: newUser });
   }
 
   // UPDATE
