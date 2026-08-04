@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
 
   if (!WEBHOOK_SECRET) {
     throw new Error(
-      "Please add WEBHOOK_SECRET from Clerk Dashboard to .env or .env.local",
+      "Please add CLERK_WEBHOOK_SIGNING_SECRET from Clerk Dashboard to .env or .env.local",
     );
   }
 
@@ -75,19 +75,21 @@ export async function POST(req: NextRequest) {
     };
 
     try {
+      console.log("STEP 1");
+
       const newUser = await createUser(user);
+      console.log("STEP 2", newUser);
 
-      console.log("Created user:", newUser);
+      const client = await clerkClient();
+      console.log("STEP 3");
 
-      if (newUser) {
-        const client = await clerkClient();
+      await client.users.updateUserMetadata(id, {
+        publicMetadata: {
+          userId: newUser._id.toString(),
+        },
+      });
 
-        await client.users.updateUserMetadata(id, {
-          publicMetadata: {
-            userId: newUser._id.toString(),
-          },
-        });
-      }
+      console.log("STEP 4");
 
       return NextResponse.json({ message: "OK", user: newUser });
     } catch (error) {
